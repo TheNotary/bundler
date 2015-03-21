@@ -35,6 +35,7 @@ module Bundler
         :constant_array   => constant_array,
         :author           => git_user_name.empty? ? "TODO: Write your name" : git_user_name,
         :email            => git_user_email.empty? ? "TODO: Write your email address" : git_user_email,
+        :template         => options[:template],
         :test             => options[:test],
         :ext              => options[:ext],
         :bin              => options[:bin],
@@ -42,8 +43,10 @@ module Bundler
       }
       ensure_safe_gem_name(name, constant_array)
 
+      # Hmmm... generate dynamically instead?
       templates = {
         "Gemfile.tt" => "Gemfile",
+        "changelog.tt" => "changelog",
         "gitignore.tt" => ".gitignore",
         "lib/newgem.rb.tt" => "lib/#{namespaced_path}.rb",
         "lib/newgem/version.rb.tt" => "lib/#{namespaced_path}/version.rb",
@@ -53,6 +56,11 @@ module Bundler
         "bin/console.tt" => "bin/console",
         "bin/setup.tt" => "bin/setup"
       }
+
+
+      templates = dynamically_generate_templates || templates
+
+      
 
       if ask_and_set(:coc, "Do you want to include a code of conduct in gems you generate?",
           "Codes of conduct can increase contributions to your project by contributors who " \
@@ -101,8 +109,11 @@ module Bundler
         )
       end
 
+
+      template_src = match_template_src
+
       templates.each do |src, dst|
-        thor.template("newgem/#{src}", target.join(dst), config)
+        thor.template("#{template_src}/#{src}", target.join(dst), config)
       end
 
       Bundler.ui.info "Initializing git repo in #{target}"
@@ -115,6 +126,44 @@ module Bundler
     end
 
     private
+
+    def dynamically_generate_templates 
+      return nil if options["template"].nil?
+
+      template_src = get_template_src
+
+      templates = {}
+      Dir.glob("#{template_src}/**/*.tt").each do |f|
+        base_path = f[template_src.length+1..-1]
+        templates.merge!(base_path => base_path.gsub(/\.tt$/, "").gsub('#{name}', "#{name}") )
+      end
+
+      templates
+    end
+
+    def match_template_src
+      template_src = get_template_src
+
+      unless File.exists?(template_src)
+        # else message the user that the template could not be found
+        Bundler.ui.error "Could not find template folder #{options["template"]} in `~/.bundle/gem_templates/`. Please check to make sure your desired template exists."
+        exit 1
+      end
+
+      template_src
+    end
+
+    def get_template_src
+      if options["template"].nil?
+        gem_template_location = ""
+        gem_template = "newgem"
+        template_src = "#{gem_template_location}#{gem_template}"
+      else
+        gem_template_location = File.expand_path("~/.bundle/gem_templates") +"/"
+        gem_template = options["template"]
+        template_src = "#{gem_template_location}#{gem_template}"
+      end
+    end
 
     def resolve_name(name)
       Pathname.pwd.join(name).basename.to_s
